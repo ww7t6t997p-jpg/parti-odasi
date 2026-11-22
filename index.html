@@ -20,6 +20,12 @@ button.o{background:var(--o);color:#1a1033}button.g{background:var(--g);color:#0
 .big{font-size:52px;font-weight:900;text-align:center;letter-spacing:2px}
 .pop{animation:pop .5s}@keyframes pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
 .bar{height:10px;border-radius:10px;background:var(--o)}
+button.b{background:var(--b)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
+.gc{background:var(--card);border:2px solid #3a2f6b;border-radius:20px;padding:12px;font-size:14px;line-height:1.25}
+.gc.sel{border-color:var(--o);box-shadow:0 0 0 3px rgba(245,158,11,.3)}.gc b{display:block;font-size:16px;margin:2px 0}.ge{font-size:32px}
+.dist{position:relative;display:flex;gap:8px;background:#120d28;border-radius:14px;margin:6px 0;padding:12px 14px;overflow:hidden}
+.dist i{position:absolute;inset:0 auto 0 0;background:#3b2a7a}.dist.ok i{background:#15803d}.dist span,.dist b{position:relative}.dist span{flex:1}
 @media(prefers-reduced-motion:reduce){.pop{animation:none}}
 </style></head>
 <body><div id="app"></div>
@@ -31,7 +37,17 @@ const sock = io({ reconnectionDelayMax: 3000 });
 let S = null, at = 0, msg = '', cfg = { game: 'tf', mode: 'solo', rounds: 5, time: 20, teams: 2 };
 const urlCode = new URLSearchParams(location.search).get('oda') || '';
 const save = o => localStorage.setItem('ses', JSON.stringify(o));
-const GN = { tf: 'Doğru mu Yanlış mı?', closest: 'En Yakın Cevabı Bul' };
+const GAMES = [
+  ['tf', '✅', 'Doğru mu Yanlış mı?', 'Şaşırtıcı bilgiler, hızlı karar'],
+  ['closest', '🎯', 'En Yakın Cevabı Bul', 'Sayıya en çok yaklaşan kazanır'],
+  ['quiz', '🧠', 'Hızlı Quiz', '4 şık, hız bonuslu yarış'],
+  ['liar', '🕵️', 'Hangisi Yalan?', '3 bilgiden yalanı yakala'],
+  ['wyr', '🤔', 'Kimi Seçerdin?', 'İki seçenek, çoğunluk puan alır'],
+  ['ml', '👀', 'Kim Daha Olası?', 'Arkadaşlarından birini seç'],
+  ['emoji', '🎬', 'Emojiden Tahmin Et', 'Emojiler hangi film ya da oyun?'],
+];
+const GN = Object.fromEntries(GAMES.map(g => [g[0], g[2]])), K = { closest: 'num', emoji: 'txt' };
+const cards = pick => `<div class="grid">${GAMES.map(g => `<div class="gc ${pick && cfg.game === g[0] ? 'sel' : ''}" ${pick ? `onclick="cfg.game='${g[0]}';draw()"` : ''}><div class="ge">${g[1]}</div><b>${g[2]}</b>${g[3]}<div class="mu">2–10 kişi · ~5 dk</div></div>`).join('')}</div>`;
 
 sock.on('connect', () => {
   let x = null; try { x = JSON.parse(localStorage.getItem('ses')); } catch (e) {}
@@ -44,7 +60,7 @@ sock.on('disconnect', () => { msg = 'Bağlantı koptu. Yeniden bağlanılıyor�
 const name = () => { const v = $('nm').value.trim(); if (!v) { msg = 'Önce kullanıcı adını yaz.'; draw(); return ''; } localStorage.setItem('nm', v); return v; };
 const mk = () => { const n = name(); if (n) sock.emit('create', n, r => save(r)); };
 const jn = () => { const n = name(); if (n) sock.emit('join', $('cd').value, n, r => { if (r.err) { msg = r.err; draw(); } else save(r); }); };
-const send = () => { const t = $('ans').value.trim(), v = Number(t.replace(/\./g, '').replace(',', '.')); if (t && Number.isFinite(v)) sock.emit('answer', v); };
+const send = () => { const t = $('ans').value.trim(); if (!t) return; if (K[S.game] === 'txt') return sock.emit('answer', t); const v = Number(t.replace(/\./g, '').replace(',', '.')); if (Number.isFinite(v)) sock.emit('answer', v); };
 const leaveRoom = () => { sock.emit('leave'); localStorage.removeItem('ses'); S = null; draw(); };
 const copy = b => { const l = location.origin + '/?oda=' + S.code; (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(() => b.textContent = 'Kopyalandı ✓', () => prompt('Bağlantı:', l)); };
 const setCfg = (k, el) => { cfg[k] = isNaN(el.value) ? el.value : +el.value; draw(); };
@@ -54,12 +70,11 @@ function home() {
   <div class="card"><input id="nm" maxlength="12" placeholder="Kullanıcı adın" value="${esc(localStorage.getItem('nm') || '')}">
   <button class="o" onclick="mk()">ODA OLUŞTUR</button></div>
   <div class="card"><input id="cd" maxlength="5" placeholder="ODA KODU" value="${esc(urlCode)}" style="text-transform:uppercase;text-align:center;letter-spacing:6px">
-  <button onclick="jn()">ODAYA KATIL</button></div>`;
+  <button onclick="jn()">ODAYA KATIL</button></div><h2>Oyun modları</h2>${cards(false)}`;
 }
 function setup() {
   const sel = (k, o) => `<select onchange="setCfg('${k}',this)">${o.map(([v, t]) => `<option value="${v}" ${cfg[k] == v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
-  return `<div class="card"><h2>Oyun ayarları</h2>
-  ${sel('game', [['tf', '✅ Doğru mu Yanlış mı?'], ['closest', '🎯 En Yakın Cevabı Bul']])}
+  return `<h2>Oyun seç</h2>${cards(true)}<div class="card"><h2>Ayarlar</h2>
   ${sel('mode', [['solo', 'Bireysel oyna'], ['team', 'Takımlı oyna']])}
   ${cfg.mode === 'team' ? sel('teams', [[2, '2 takım'], [3, '3 takım'], [4, '4 takım']]) : ''}
   ${sel('rounds', [[3, '3 tur'], [5, '5 tur'], [8, '8 tur']])}
@@ -70,7 +85,7 @@ function lobby(s) {
   const host = s.host === s.me, mine = s.players.find(p => p.id === s.me);
   return `<div class="card"><div class="mu">Oda kodu</div><div class="big">${s.code}</div>
   <button class="x" onclick="copy(this)">Bağlantıyı kopyala</button></div>
-  <div class="card"><h2>Oyuncular (${s.players.length}/8)</h2>${s.players.map(p => `<div class="pl"><span class="av">${p.av}</span><b>${esc(p.name)}${p.id === s.host ? ' 👑' : ''}</b><span>${!p.on ? '📴' : p.ready || p.id === s.host ? '✅' : '⏳'}</span>${host && p.id !== s.me ? `<button class="x kick" onclick="sock.emit('kick','${p.id}')">✕</button>` : ''}</div>`).join('')}</div>
+  <div class="card"><h2>Oyuncular (${s.players.length}/10)</h2>${s.players.map(p => `<div class="pl"><span class="av">${p.av}</span><b>${esc(p.name)}${p.id === s.host ? ' 👑' : ''}</b><span>${!p.on ? '📴' : p.ready || p.id === s.host ? '✅' : '⏳'}</span>${host && p.id !== s.me ? `<button class="x kick" onclick="sock.emit('kick','${p.id}')">✕</button>` : ''}</div>`).join('')}</div>
   ${host ? setup() : `<button class="${mine.ready ? 'x' : 'g'}" onclick="sock.emit('ready')">${mine.ready ? 'Hazır değilim' : 'Hazırım'}</button><p class="mu">Oda sahibinin oyunu başlatması bekleniyor.</p>`}
   <button class="x" onclick="leaveRoom()">Odadan ayrıl</button>`;
 }
@@ -79,19 +94,22 @@ function board(s) {
   return `<div class="card"><h2>Puan durumu</h2>${rows.sort((a, b) => b.sc - a.sc).map(x => `<div class="pl"><span class="av">${x.av}</span><b style="color:${x.c || 'inherit'}">${esc(x.n)}</b><b style="flex:none">${x.sc}</b></div>`).join('')}</div>`;
 }
 function play(s) {
-  const q = s.q, rev = s.phase === 'reveal', mine = s.players.find(p => p.id === s.me);
+  const q = s.q, rev = s.phase === 'reveal', mine = s.players.find(p => p.id === s.me), kind = K[s.game] || 'opt';
   const tm = s.mode === 'team' && mine.team != null ? s.teams[mine.team] : null;
-  let h = `<div class="mu">Tur ${s.round}/${s.cfg.rounds} · ${GN[s.game]}${tm ? ` · <b style="color:${tm.color}">${tm.name} takımı</b>` : ''}</div><div class="card pop"><h2>${esc(q.t)}</h2></div>`;
+  let h = `<div class="mu">Tur ${s.round}/${s.cfg.rounds} · ${GN[s.game]}${q.c ? ' · ' + esc(q.c) : ''}${tm ? ` · <b style="color:${tm.color}">${tm.name} takımı</b>` : ''}</div><div class="card pop"><h2 ${kind === 'txt' ? 'style="font-size:44px;text-align:center"' : ''}>${esc(q.t)}</h2></div>`;
   if (!rev) {
     h += `<div class="bar" id="bar"></div><p class="mu" id="t"></p>`;
     if (s.mine) h += `<div class="card">✅ Cevabın alındı. Diğerleri bekleniyor.</div>`;
-    else if (s.game === 'tf') h += `<div class="row"><button class="g" onclick="sock.emit('answer',true)">DOĞRU</button><button class="o" onclick="sock.emit('answer',false)">YANLIŞ</button></div>`;
-    else h += `<input id="ans" inputmode="decimal" placeholder="Tahminin${q.u ? ' (' + esc(q.u) + ')' : ''}"><button class="o" onclick="send()">GÖNDER</button>${tm ? '<p class="mu">Takımdan ilk gönderilen tahmin geçerli olur.</p>' : ''}`;
+    else if (kind === 'opt') { const C = q.o.length === 2 ? ['g', 'o'] : ['', 'b', 'o', 'g']; h += q.o.map((t, i) => `<button class="${C[i % C.length]}" onclick="sock.emit('answer',${i})">${esc(t)}</button>`).join(''); }
+    else h += `<input id="ans" ${kind === 'num' ? 'inputmode="decimal"' : 'maxlength="40" autocomplete="off"'} placeholder="${kind === 'num' ? 'Tahminin' + (q.u ? ' (' + esc(q.u) + ')' : '') : 'Cevabın'}"><button class="o" onclick="send()">GÖNDER</button>${tm && kind === 'num' ? '<p class="mu">Takımdan ilk gönderilen tahmin geçerli olur.</p>' : ''}`;
     h += `<p class="mu">${s.players.filter(p => p.done).length} cevap geldi</p>`;
   } else {
-    const r = s.rev, fmt = v => s.game === 'tf' ? (v ? 'Doğru' : 'Yanlış') : v.toLocaleString('tr-TR');
-    h += `<div class="card pop"><div class="mu">Doğru cevap</div><div class="big">${fmt(r.v).toUpperCase()} ${esc(q.u || '')}</div></div>
-    <div class="card">${r.rows.map(x => `<div class="pl"><span class="av">${x.av}</span><b style="color:${x.c || 'inherit'}">${esc(x.n)}</b><span class="mu">${fmt(x.v)}</span><b style="flex:none">+${x.pts}</b></div>`).join('') || '<p class="mu">Kimse cevaplamadı.</p>'}</div>`;
+    const r = s.rev, fmt = v => kind === 'num' ? v.toLocaleString('tr-TR') : kind === 'txt' ? v : q.o[v];
+    const tot = r.cnt ? r.cnt.reduce((a, b) => a + b, 0) || 1 : 1, pc = i => Math.round(100 * r.cnt[i] / tot);
+    if (r.v != null) h += `<div class="card pop"><div class="mu">Doğru cevap</div><div class="big" style="font-size:${kind === 'opt' ? 26 : 44}px">${esc(fmt(r.v))} ${esc(q.u || '')}</div></div>`;
+    if (r.cnt) h += `<div class="card">${q.o.map((t, i) => `<div class="dist ${r.v === i ? 'ok' : ''}"><i style="width:${pc(i)}%"></i><span>${esc(t)}</span><b>${pc(i)}%</b></div>`).join('')}</div>`;
+    if (r.x) h += `<div class="card">💡 ${esc(r.x)}</div>`;
+    h += `<div class="card">${r.rows.map(x => `<div class="pl"><span class="av">${x.av}</span><b style="color:${x.c || 'inherit'}">${esc(x.n)}</b>${kind === 'opt' ? '' : `<span class="mu">${esc(fmt(x.v))}</span>`}<b style="flex:none">+${x.pts}</b></div>`).join('') || '<p class="mu">Kimse cevaplamadı.</p>'}</div>`;
   }
   return h + board(s) + (s.host === s.me ? `<button class="x" onclick="sock.emit('stop')">Oyunu bitir</button>` : '');
 }
