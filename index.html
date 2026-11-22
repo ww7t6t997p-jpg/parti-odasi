@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="tr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f0b1e"><title>Parti Odası</title>
+<style>
+:root{--bg:#0f0b1e;--card:#1b1535;--tx:#f5f3ff;--mu:#a49bc9;--p:#8b5cf6;--b:#3b82f6;--o:#f59e0b;--g:#22c55e}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:radial-gradient(900px 500px at 50% -10%,#2f1d6b,var(--bg));background-attachment:fixed;color:var(--tx);font:18px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh;padding:env(safe-area-inset-top) 16px env(safe-area-inset-bottom)}
+#app{max-width:480px;margin:0 auto;padding:16px 0 40px}
+h1{font-size:34px;line-height:1.1;margin:20px 0 8px;font-weight:900}h2{margin:0 0 10px;font-size:20px}
+.card{background:var(--card);border-radius:22px;padding:16px;margin:12px 0}
+.mu{color:var(--mu);font-size:15px}.msg{background:#7c2d12}
+button,input,select{font:inherit;color:inherit;width:100%;min-height:56px;border-radius:16px;border:2px solid #3a2f6b;background:#120d28;padding:0 16px;margin:6px 0}
+button{background:var(--p);border:0;font-weight:800;transition:transform .1s}
+button:active{transform:scale(.96)}
+button.o{background:var(--o);color:#1a1033}button.g{background:var(--g);color:#052e16}button.x{background:#2a2250}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.pl{display:flex;align-items:center;gap:10px;padding:6px 0}.pl b{flex:1}.av{font-size:28px}
+.kick{width:48px;min-height:40px;margin:0;padding:0;flex:none}
+.big{font-size:52px;font-weight:900;text-align:center;letter-spacing:2px}
+.pop{animation:pop .5s}@keyframes pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.06)}100%{transform:scale(1);opacity:1}}
+.bar{height:10px;border-radius:10px;background:var(--o)}
+@media(prefers-reduced-motion:reduce){.pop{animation:none}}
+</style></head>
+<body><div id="app"></div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const $ = i => document.getElementById(i);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const sock = io({ reconnectionDelayMax: 3000 });
+let S = null, at = 0, msg = '', cfg = { game: 'tf', mode: 'solo', rounds: 5, time: 20, teams: 2 };
+const urlCode = new URLSearchParams(location.search).get('oda') || '';
+const save = o => localStorage.setItem('ses', JSON.stringify(o));
+const GN = { tf: 'Doğru mu Yanlış mı?', closest: 'En Yakın Cevabı Bul' };
+
+sock.on('connect', () => {
+  let x = null; try { x = JSON.parse(localStorage.getItem('ses')); } catch (e) {}
+  if (x) sock.emit('rejoin', x.code, x.key, r => { if (r.err) { localStorage.removeItem('ses'); S = null; draw(); } });
+});
+sock.on('s', s => { S = s; at = Date.now(); msg = ''; draw(); });
+sock.on('kicked', () => { localStorage.removeItem('ses'); S = null; msg = 'Oda sahibi seni odadan çıkardı.'; draw(); });
+sock.on('disconnect', () => { msg = 'Bağlantı koptu. Yeniden bağlanılıyor…'; draw(); });
+
+const name = () => { const v = $('nm').value.trim(); if (!v) { msg = 'Önce kullanıcı adını yaz.'; draw(); return ''; } localStorage.setItem('nm', v); return v; };
+const mk = () => { const n = name(); if (n) sock.emit('create', n, r => save(r)); };
+const jn = () => { const n = name(); if (n) sock.emit('join', $('cd').value, n, r => { if (r.err) { msg = r.err; draw(); } else save(r); }); };
+const send = () => { const t = $('ans').value.trim(), v = Number(t.replace(/\./g, '').replace(',', '.')); if (t && Number.isFinite(v)) sock.emit('answer', v); };
+const leaveRoom = () => { sock.emit('leave'); localStorage.removeItem('ses'); S = null; draw(); };
+const copy = b => { const l = location.origin + '/?oda=' + S.code; (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(() => b.textContent = 'Kopyalandı ✓', () => prompt('Bağlantı:', l)); };
+const setCfg = (k, el) => { cfg[k] = isNaN(el.value) ? el.value : +el.value; draw(); };
+
+function home() {
+  return `<h1>Arkadaşlarını Topla, Oyunu Başlat!</h1><p class="mu">Bir oda oluştur, arkadaşlarını çağır ve eğlenceye başla.</p>
+  <div class="card"><input id="nm" maxlength="12" placeholder="Kullanıcı adın" value="${esc(localStorage.getItem('nm') || '')}">
+  <button class="o" onclick="mk()">ODA OLUŞTUR</button></div>
+  <div class="card"><input id="cd" maxlength="5" placeholder="ODA KODU" value="${esc(urlCode)}" style="text-transform:uppercase;text-align:center;letter-spacing:6px">
+  <button onclick="jn()">ODAYA KATIL</button></div>`;
+}
+function setup() {
+  const sel = (k, o) => `<select onchange="setCfg('${k}',this)">${o.map(([v, t]) => `<option value="${v}" ${cfg[k] == v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  return `<div class="card"><h2>Oyun ayarları</h2>
+  ${sel('game', [['tf', '✅ Doğru mu Yanlış mı?'], ['closest', '🎯 En Yakın Cevabı Bul']])}
+  ${sel('mode', [['solo', 'Bireysel oyna'], ['team', 'Takımlı oyna']])}
+  ${cfg.mode === 'team' ? sel('teams', [[2, '2 takım'], [3, '3 takım'], [4, '4 takım']]) : ''}
+  ${sel('rounds', [[3, '3 tur'], [5, '5 tur'], [8, '8 tur']])}
+  ${sel('time', [[10, 'Tur süresi: 10 sn'], [20, 'Tur süresi: 20 sn'], [30, 'Tur süresi: 30 sn']])}</div>
+  <button class="o" onclick="sock.emit('start',cfg)">OYUNU BAŞLAT</button>`;
+}
+function lobby(s) {
+  const host = s.host === s.me, mine = s.players.find(p => p.id === s.me);
+  return `<div class="card"><div class="mu">Oda kodu</div><div class="big">${s.code}</div>
+  <button class="x" onclick="copy(this)">Bağlantıyı kopyala</button></div>
+  <div class="card"><h2>Oyuncular (${s.players.length}/8)</h2>${s.players.map(p => `<div class="pl"><span class="av">${p.av}</span><b>${esc(p.name)}${p.id === s.host ? ' 👑' : ''}</b><span>${!p.on ? '📴' : p.ready || p.id === s.host ? '✅' : '⏳'}</span>${host && p.id !== s.me ? `<button class="x kick" onclick="sock.emit('kick','${p.id}')">✕</button>` : ''}</div>`).join('')}</div>
+  ${host ? setup() : `<button class="${mine.ready ? 'x' : 'g'}" onclick="sock.emit('ready')">${mine.ready ? 'Hazır değilim' : 'Hazırım'}</button><p class="mu">Oda sahibinin oyunu başlatması bekleniyor.</p>`}
+  <button class="x" onclick="leaveRoom()">Odadan ayrıl</button>`;
+}
+function board(s) {
+  const rows = s.mode === 'team' ? s.teams.map((t, i) => ({ n: t.name, av: s.players.filter(p => p.team === i).map(p => p.av).join(''), c: t.color, sc: t.score })) : s.players.map(p => ({ n: p.name, av: p.av, sc: p.score }));
+  return `<div class="card"><h2>Puan durumu</h2>${rows.sort((a, b) => b.sc - a.sc).map(x => `<div class="pl"><span class="av">${x.av}</span><b style="color:${x.c || 'inherit'}">${esc(x.n)}</b><b style="flex:none">${x.sc}</b></div>`).join('')}</div>`;
+}
+function play(s) {
+  const q = s.q, rev = s.phase === 'reveal', mine = s.players.find(p => p.id === s.me);
+  const tm = s.mode === 'team' && mine.team != null ? s.teams[mine.team] : null;
+  let h = `<div class="mu">Tur ${s.round}/${s.cfg.rounds} · ${GN[s.game]}${tm ? ` · <b style="color:${tm.color}">${tm.name} takımı</b>` : ''}</div><div class="card pop"><h2>${esc(q.t)}</h2></div>`;
+  if (!rev) {
+    h += `<div class="bar" id="bar"></div><p class="mu" id="t"></p>`;
+    if (s.mine) h += `<div class="card">✅ Cevabın alındı. Diğerleri bekleniyor.</div>`;
+    else if (s.game === 'tf') h += `<div class="row"><button class="g" onclick="sock.emit('answer',true)">DOĞRU</button><button class="o" onclick="sock.emit('answer',false)">YANLIŞ</button></div>`;
+    else h += `<input id="ans" inputmode="decimal" placeholder="Tahminin${q.u ? ' (' + esc(q.u) + ')' : ''}"><button class="o" onclick="send()">GÖNDER</button>${tm ? '<p class="mu">Takımdan ilk gönderilen tahmin geçerli olur.</p>' : ''}`;
+    h += `<p class="mu">${s.players.filter(p => p.done).length} cevap geldi</p>`;
+  } else {
+    const r = s.rev, fmt = v => s.game === 'tf' ? (v ? 'Doğru' : 'Yanlış') : v.toLocaleString('tr-TR');
+    h += `<div class="card pop"><div class="mu">Doğru cevap</div><div class="big">${fmt(r.v).toUpperCase()} ${esc(q.u || '')}</div></div>
+    <div class="card">${r.rows.map(x => `<div class="pl"><span class="av">${x.av}</span><b style="color:${x.c || 'inherit'}">${esc(x.n)}</b><span class="mu">${fmt(x.v)}</span><b style="flex:none">+${x.pts}</b></div>`).join('') || '<p class="mu">Kimse cevaplamadı.</p>'}</div>`;
+  }
+  return h + board(s) + (s.host === s.me ? `<button class="x" onclick="sock.emit('stop')">Oyunu bitir</button>` : '');
+}
+function end(s) {
+  const rows = (s.mode === 'team' ? s.teams.map(t => ({ n: t.name, sc: t.score })) : s.players.map(p => ({ n: p.name, sc: p.score }))).sort((a, b) => b.sc - a.sc);
+  const w = rows.filter(x => x.sc === rows[0].sc), night = [...s.players].sort((a, b) => b.night - a.night);
+  return `<div class="card pop"><div class="big">🏆</div><h1 style="text-align:center">${w.length > 1 ? 'Beraberlik!' : esc(w[0].n) + ' kazandı!'}</h1></div>${board(s)}
+  <div class="card"><h2>🌙 Gecenin puan tablosu</h2>${night.map((p, i) => `<div class="pl"><span>${['🥇', '🥈', '🥉'][i] || i + 1}</span><span class="av">${p.av}</span><b>${esc(p.name)}</b><b style="flex:none">${p.night}</b></div>`).join('')}</div>
+  ${s.host === s.me ? `<button class="o" onclick="sock.emit('stop')">Yeni oyun seç</button><button class="x" onclick="sock.emit('reset')">Gece puanlarını sıfırla</button>` : '<p class="mu">Oda sahibi yeni oyunu seçecek.</p>'}`;
+}
+function draw() {
+  const keep = {}; for (const i of ['nm', 'cd', 'ans']) if ($(i)) keep[i] = $(i).value;
+  const f = document.activeElement && document.activeElement.id;
+  $('app').innerHTML = (msg ? `<div class="card msg">${esc(msg)}</div>` : '') + (!S ? home() : S.phase === 'lobby' ? lobby(S) : S.phase === 'end' ? end(S) : play(S));
+  for (const i in keep) if ($(i)) $(i).value = keep[i];
+  if (f && $(f)) $(f).focus();
+}
+setInterval(() => {
+  if (!S || S.phase !== 'question') return;
+  const l = Math.max(0, S.left - (Date.now() - at));
+  if ($('t')) $('t').textContent = Math.ceil(l / 1000) + ' sn';
+  if ($('bar')) $('bar').style.width = (100 * l / (S.cfg.time * 1000)) + '%';
+}, 250);
+draw();
+</script>
+</body></html>
